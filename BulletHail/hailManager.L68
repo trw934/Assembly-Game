@@ -1,0 +1,265 @@
+00001000 Starting Address
+Assembler used: EASy68K Editor/Assembler v5.16.01
+Created On: 10/18/2021 11:45:21 AM
+
+00000000                             1  *-----------------------------------------------------------
+00000000                             2  * Title      : hailManager
+00000000                             3  * Written by : Thomas Wilson
+00000000                             4  * Date       : 9/27/2021
+00000000                             5  * Description: This program handles the bullets (hail) that
+00000000                             6  * the player has to dodge in the game. It handles collision
+00000000                             7  * between the player and the bullets, the physics attached 
+00000000                             8  * to each bullet, and managing the randomness of where the 
+00000000                             9  * bullets spawn on screen.
+00000000                            10  *-----------------------------------------------------------
+00000000                            11  
+00000000  =00000058                 12  DRAW_CIRCLE_TRAP_CODE EQU 88
+00000000  =00000005                 13  BULLET_RADIUS   EQU 5
+00000000  =000001A4                 14  SCREEN_TOP      EQU 420     ;105 in fixed point
+00000000  =00000910                 15  SCREEN_BOTTOM   EQU 2320    ;580 in fixed point
+00000000  =00000003                 16  SPAWN_TIME_MAX  EQU 3
+00000000                            17  
+00000000                            18  *Physics
+00000000  =0000000C                 19  INT_VELOCITY    EQU 12   ;3 in fixed point
+00000000  =00000005                 20  ACCELERATION    EQU 5   ;1.5 in fixed point
+00000000                            21  
+00000000                            22  * Initializes a bullet at a random location at top of screen
+00000000                            23  * d4 - Spawn time for bullet
+00000000                            24  initBullet
+Line 25 ERROR: Undefined symbol
+00000000                            25      movem.l ALL_REG, -(sp)
+00000000  2839 000002A8             26      move.l  (bulletSpawnTime),d4
+00000006  0C84 00000000             27      cmpi.l  #0,d4
+0000000C  6600 004A                 28      bne initDone
+00000010  23FC 00000003 000002A8    29      move.l  #SPAWN_TIME_MAX,(bulletSpawnTime)
+0000001A  4EB9 00000060             30      jsr findOpenBullet
+00000020                            31      
+00000020  43F9 00000208             32      lea     bulletsY1,a1
+00000026  45F9 00000258             33      lea     bulletVelocity,a2
+0000002C  4EB9 00000192             34      jsr     getRandomWord
+00000032  3613                      35      move.w  (a3),d3
+00000034  86FC 026C                 36      divu    #620,d3
+00000038  4243                      37      clr.w   d3
+0000003A  4843                      38      swap    d3
+0000003C  0683 0000000A             39      addi.l  #10,d3
+00000042  E58B                      40      lsl.l   #2,d3
+00000044  2183 7000                 41      move.l  d3,(a0,d7)       ;Randomly generated x coordinate
+00000048  23BC 000001A4 7000        42      move.l  #SCREEN_TOP,(a1,d7)
+00000050  25BC 0000000C 7000        43      move.l  #INT_VELOCITY,(a2,d7)
+00000058                            44  initDone
+00000058  53B9 000002A8             45      subi.l  #1,(bulletSpawnTime)
+Line 46 ERROR: Undefined symbol
+0000005E                            46      movem.l (sp)+,ALL_REG
+0000005E  4E75                      47      rts
+00000060                            48      
+00000060                            49      
+00000060                            50  *Finds the next spot in the array that doesn't have a bullet
+00000060                            51  findOpenBullet
+00000060  7E00                      52      move.l  #0,d7
+00000062  2A39 000001B4             53      move.l  (numBullets),d5
+00000068  41F9 000001B8             54      lea     bulletsX1,a0
+0000006E                            55  openLoop
+0000006E  2C30 7000                 56      move.l  (a0,d7),d6
+00000072  0C86 00000000             57      cmpi.l  #0,d6
+00000078  6700 000A                 58      beq     openDone
+0000007C  5887                      59      addi.l  #4,d7
+0000007E  BE85                      60      cmp.l   d5,d7
+00000080  6CD6                      61      bge     initDone
+00000082  6DEA                      62      blt     openLoop
+00000084                            63  openDone
+00000084  4E75                      64      rts
+00000086                            65      
+00000086                            66  ;setPenFillBlack
+00000086                            67      ;move.l  #COLOR_BLACK,d1             ;Initializes pen parameters to prepare to draw segments
+00000086                            68     ; move.l  #FILL_COLOR_TRAP_CODE,d0
+00000086                            69    ;  trap    #15
+00000086                            70   ;   move.l  #PEN_COLOR_TRAP_CODE,d0
+00000086                            71  ;    trap    #15
+00000086                            72  
+00000086                            73  ;setPenFillWhite
+00000086                            74    ;  move.l  #COLOR_WHITE,d1             ;Initializes pen parameters to prepare to draw segments
+00000086                            75    ;  move.l  #FILL_COLOR_TRAP_CODE,d0
+00000086                            76    ;  trap    #15
+00000086                            77   ;   move.l  #PEN_COLOR_TRAP_CODE,d0
+00000086                            78    ;  trap    #15
+00000086                            79      
+00000086                            80  renderBullets
+Line 81 ERROR: Undefined symbol
+00000086                            81      movem.l ALL_REG, -(sp)
+00000086  7058                      82      move.l  #DRAW_CIRCLE_TRAP_CODE,d0
+00000088  7E00                      83      move.l  #0,d7
+0000008A  41F9 000001B8             84      lea     bulletsX1,a0
+00000090  43F9 00000208             85      lea     bulletsY1,a1
+00000096  45F9 00000258             86      lea     bulletVelocity,a2
+0000009C  2A39 000001B4             87      move.l  (numBullets),d5
+000000A2                            88  renderLoop
+000000A2  2230 7000                 89      move.l  (a0,d7),d1
+000000A6  6700 0086                 90      beq     skipRender
+000000AA                            91      
+000000AA  E489                      92      lsr.l   #2,d1
+000000AC  2C01                      93      move.l  d1,d6     
+000000AE  2431 7000                 94      move.l  (a1,d7),d2
+000000B2  E48A                      95      lsr.l   #2,d2
+000000B4  2601                      96      move.l  d1,d3
+000000B6  5A83                      97      addi.l  #BULLET_RADIUS,d3
+000000B8  2802                      98      move.l  d2,d4
+000000BA  5A84                      99      addi.l  #BULLET_RADIUS,d4
+000000BC                           100      ;jsr setPenFillBlack
+Line 101 ERROR: Undefined symbol
+000000BC  223C 004DBD16            101      move.l  #COLOR_BLACK,d1             ;Initializes pen parameters to prepare to draw segments
+Line 102 ERROR: Undefined symbol
+000000C2  203C 004DBD16            102      move.l  #FILL_COLOR_TRAP_CODE,d0
+000000C8  4E4F                     103      trap    #15
+Line 104 ERROR: Undefined symbol
+000000CA  203C 004DBD16            104      move.l  #PEN_COLOR_TRAP_CODE,d0
+000000D0  4E4F                     105      trap    #15
+000000D2  7058                     106      move.l  #DRAW_CIRCLE_TRAP_CODE,d0
+000000D4  2206                     107      move.l  d6,d1
+000000D6  4E4F                     108      trap #15
+000000D8                           109     ; jsr setPenFillWhite
+Line 110 ERROR: Undefined symbol
+000000D8  223C 004DBD16            110      move.l  #COLOR_WHITE,d1             ;Initializes pen parameters to prepare to draw segments
+Line 111 ERROR: Undefined symbol
+000000DE  203C 004DBD16            111      move.l  #FILL_COLOR_TRAP_CODE,d0
+000000E4  4E4F                     112      trap    #15
+Line 113 ERROR: Undefined symbol
+000000E6  203C 004DBD16            113      move.l  #PEN_COLOR_TRAP_CODE,d0
+000000EC  4E4F                     114      trap    #15
+000000EE  7058                     115      move.l  #DRAW_CIRCLE_TRAP_CODE,d0
+000000F0  2206                     116      move.l  d6,d1
+000000F2  E58A                     117      lsl.l   #2,d2
+000000F4  D4B2 7000                118      add.l   (a2,d7),d2
+000000F8  2382 7000                119      move.l  d2,(a1,d7)
+000000FC  E58C                     120      lsl.l   #2,d4
+000000FE  D8B2 7000                121      add.l   (a2,d7),d4
+00000102  5AB2 7000                122      addi.l  #ACCELERATION,(a2,d7)
+00000106  E48C                     123      lsr.l   #2,d4
+00000108  E48A                     124      lsr.l   #2,d2
+0000010A  4E4F                     125      trap #15
+0000010C  0C82 00000910            126      cmpi.l  #SCREEN_BOTTOM,d2
+00000112  6D00 001A                127      blt     skipRender
+00000116                           128  deleteBullet
+00000116  21BC 00000000 7000       129      move.l  #0,(a0,d7)
+0000011E  23BC 00000000 7000       130      move.l  #0,(a1,d7)
+00000126  25BC 00000000 7000       131      move.l  #0,(a2,d7)
+0000012E                           132  skipRender
+0000012E  5887                     133      addi.l  #4,d7
+00000130  BE85                     134      cmp.l   d5,d7
+00000132  6D00 FF6E                135      blt     renderLoop
+00000136                           136  renderDone
+Line 137 ERROR: Undefined symbol
+00000136                           137      movem.l (sp)+,ALL_REG
+00000136  4E75                     138      rts
+00000138                           139      
+00000138                           140      
+00000138                           141      
+00000138                           142  * Checks all bullets to see if collision with player occurs
+00000138                           143  * a0 - Bullet X Coordinates
+00000138                           144  * a1 - Bullet Y Coordinates
+00000138                           145  * d0 - Return value, total bullets
+00000138                           146  * d1 - Player Left X
+00000138                           147  * d2 - Player Top Y
+00000138                           148  * d3 - Player Right X
+00000138                           149  * d4 - Player Bottom Y
+00000138                           150  * d5 - Bullet position checker
+00000138                           151  * d7 - Offset into bullet array
+00000138                           152  collisionCheck
+Line 153 ERROR: Undefined symbol
+00000138  4EB9 004DBD16            153      jsr     getPlayerCoord
+0000013E  2039 000001B4            154      move.l  (numBullets),d0
+00000144  7E00                     155      move.l  #0,d7
+00000146  41F9 000001B8            156      lea     bulletsX1,a0
+0000014C  43F9 00000208            157      lea     bulletsY1,a1
+00000152                           158  collisionLoop
+00000152  2A30 7000                159      move.l  (a0,d7),d5
+00000156  E48D                     160      lsr.l   #2,d5
+00000158  0C85 00000000            161      cmpi.l  #0,d5
+0000015E  6700 0028                162      beq     noCollision
+00000162  BA83                     163      cmp.l   d3,d5
+00000164  6E00 0022                164      bgt     noCollision
+00000168  5A85                     165      addi.l  #BULLET_RADIUS,d5
+0000016A  BA81                     166      cmp.l   d1,d5
+0000016C  6D00 001A                167      blt     noCollision
+00000170  2A31 7000                168      move.l  (a1,d7),d5
+00000174  E48D                     169      lsr.l   #2,d5
+00000176  BA84                     170      cmp.l   d4,d5
+00000178  6E00 000E                171      bgt     noCollision
+0000017C  5A85                     172      addi.l  #BULLET_RADIUS,d5
+0000017E  BA82                     173      cmp.l   d2,d5
+00000180  6D00 0006                174      blt     noCollision
+00000184  7001                     175      move.l  #1,d0
+00000186  4E75                     176      rts      
+00000188                           177  noCollision
+00000188  5887                     178      addi.l  #4,d7
+0000018A  BA80                     179      cmp.l   d0,d5
+0000018C  6DC4                     180      blt     collisionLoop
+0000018E  7000                     181      move.l  #0,d0
+00000190  4E75                     182      rts
+00000192                           183      
+00000192                           184  ; Random number generator gotten from Utsab who got it from the web.
+00000192                           185  getRandomWord
+00000192  48E7 FF00                186      movem.l D0-D7,-(sp)     ;save off regs
+00000196  47F9 000002AC            187      lea RANDOMVAL,a3
+0000019C  2013                     188      move.l  (a3),d0         ;get current seed longword
+0000019E  72AF                     189      move.l  #$AF-$100,d1        ;set EOR value
+000001A0  7412                     190      move.l  #18,d2          ;do this 19 times
+000001A2                           191  keepLooping
+000001A2  D080                     192      add.l   d0,d0           ;shift left 1 bit
+000001A4  6402                     193      bcc.s   doneLooping     ;if bit not set skip feedback
+000001A6                           194  
+000001A6  B340                     195      eor.w   d1,d0           ;do Galois LFSR feedback
+000001A8                           196  doneLooping
+000001A8  51CA FFF8                197      dbf d2,keepLooping      ;loop
+000001AC                           198  
+000001AC  2680                     199      MOVE.l  d0,(a3)         ;save back to seed longword
+000001AE                           200  
+000001AE                           201  
+000001AE  4CDF 00FF                202      movem.l (sp)+,D0-D7     ;restore regs
+000001B2  4E75                     203      RTS
+000001B4                           204  
+000001B4= 00000050                 205  numBullets  dc.l    80                      ; Set to four times the actual numBullets for the offset in findOpenBullet.
+000001B8= 00000000 00000000 ...    206  bulletsX1   dc.l    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0     ; These arrays contain coordinate information for each possible bullet.
+00000208= 00000000 00000000 ...    207  bulletsY1   dc.l    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0     ; All bullets are 5x5 pixels, so we don't need tables for X2 and Y2.
+00000258= 00000000 00000000 ...    208  bulletVelocity  dc.l    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 ; Contains the current velocity of each bullet.
+000002A8= 00000000                 209  bulletSpawnTime dc.l    0
+000002AC                           210  RANDOMVAL   ds.l    1
+000002B0                           211  
+000002B0                           212  
+Line 213 WARNING: END directive missing, starting address not set
+
+11 errors detected
+1 warning generated
+
+
+SYMBOL TABLE INFORMATION
+Symbol-name         Value
+-------------------------
+ACCELERATION        5
+BULLETSPAWNTIME     2A8
+BULLETSX1           1B8
+BULLETSY1           208
+BULLETVELOCITY      258
+BULLET_RADIUS       5
+COLLISIONCHECK      138
+COLLISIONLOOP       152
+DELETEBULLET        116
+DONELOOPING         1A8
+DRAW_CIRCLE_TRAP_CODE  58
+FINDOPENBULLET      60
+GETRANDOMWORD       192
+INITBULLET          0
+INITDONE            58
+INT_VELOCITY        C
+KEEPLOOPING         1A2
+NOCOLLISION         188
+NUMBULLETS          1B4
+OPENDONE            84
+OPENLOOP            6E
+RANDOMVAL           2AC
+RENDERBULLETS       86
+RENDERDONE          136
+RENDERLOOP          A2
+SCREEN_BOTTOM       910
+SCREEN_TOP          1A4
+SKIPRENDER          12E
+SPAWN_TIME_MAX      3

@@ -1,0 +1,944 @@
+00001000 Starting Address
+Assembler used: EASy68K Editor/Assembler v5.16.01
+Created On: 12/25/2021 11:09:55 AM
+
+00000000                             1  *-----------------------------------------------------------
+00000000                             2  * Title      : BulletHail
+00000000                             3  * Written by : Thomas Wilson
+00000000                             4  * Date       : 9/27/2021
+00000000                             5  * Description: Assignment 3 - Interactive Assembly Project
+00000000                             6  * This is a game where you play as Santa Claus doing a 
+00000000                             7  * test flight for his sleigh to prepare for Christmas.
+00000000                             8  * While doing the test flight, a hailstorm occurs! Survive as
+00000000                             9  * long as you can before you get hit!
+00000000                            10  * 
+00000000                            11  * Includes files: bitmapRender.x68, scoreBanner.x68, hailManager.x68,
+00000000                            12  *                  playerManager.x68, GameOver.bmp, GameStart.bmp, Loading.bmp
+00000000                            13  *
+00000000                            14  * Requirements Locations:
+00000000                            15  * 1. User input control - playerManager.x68, handleInput function
+00000000                            16  * 2. Bitmap background - scoreBanner.x68, scoreUpdate function
+00000000                            17  * 3. Physics update - hailManager.x68, renderBullets function
+00000000                            18  * 4. Fixed point math - hailManager.x68, renderBullets function
+00000000                            19  * 5. Collision detection - hailManager.x68, collisionCheck function
+00000000                            20  * 6. 7-segment display - scoreBanner.x68, scoreUpdate function
+00000000                            21  * 7. Randomness - hailManager.x68, initBullet function
+00000000                            22  *-----------------------------------------------------------
+00000000                            23  
+00000000                            24  *Drawing Macros
+00000000  =0000005C                 25  DRAWING_MODE_TRAP_CODE  EQU     92
+00000000  =0000005E                 26  SWAP_BUFFER_TRAP_CODE   EQU     94
+00000000  =00000011                 27  ENABLE_DOUBLE_BUFFERING EQU     17
+00000000  =00000021                 28  SET_OUTPUT_RES_TRAP_CODE        EQU     33
+00000000  =028001E0                 29  OUTPUT_RESOLUTION       EQU     $028001E0   ; Output resolution is 640x580
+00000000  =00000000                 30  COLOR_BLACK             EQU     0
+00000000  =00FFFFFF                 31  COLOR_WHITE             EQU     $00FFFFFF
+00000000  =00000057                 32  DRAW_RECT_TRAP_CODE     EQU     87
+00000000  =00000051                 33  FILL_COLOR_TRAP_CODE    EQU     81
+00000000                            34  
+00000000  =00000013                 35  READ_KEYBOARD_TRAP_CODE EQU     19
+00000000  =00000052                 36  R_KEY_SPECIFIER         EQU     'R'
+00000000  =0000000B                 37  CLEAR_SCREEN_TRAP_CODE  EQU     11
+00000000                            38  
+00000000  =00000002                 39  GAME_UPDATE_COUNT       EQU     2
+00000000                            40  
+00001000                            41  START   ORG $1000                 
+00001000  223C 028001E0             42          move.l  #OUTPUT_RESOLUTION,d1           ;Sets output window to 640x580 resolution.
+00001006  7021                      43          move.l  #SET_OUTPUT_RES_TRAP_CODE,d0
+00001008  4E4F                      44          trap    #15
+0000100A                            45          
+0000100A  7211                      46          move.l  #ENABLE_DOUBLE_BUFFERING,d1     ;Enables double buffering
+0000100C  705C                      47          move.l  #DRAWING_MODE_TRAP_CODE,d0
+0000100E  4E4F                      48          trap    #15
+00001010                            49          
+00001010  41F9 001F948A             50          lea gameLoading,a0
+00001016  7000                      51          move.l  #0,d0
+00001018  7200                      52          move.l  #0,d1
+0000101A  243C 000000C8             53          move.l  #200,d2
+00001020  7664                      54          move.l  #100,d3
+00001022  283C 000000DC             55          move.l  #220,d4
+00001028  2A3C 000000C8             56          move.l  #200,d5
+0000102E  4EB9 00001116             57          jsr drawBitmap
+00001034  705E                      58          move.l  #SWAP_BUFFER_TRAP_CODE,d0
+00001036  4E4F                      59          trap #15
+00001038                            60          
+00001038  41F9 0008EC52             61          lea gameStartScreen,a0
+0000103E  7000                      62          move.l  #0,d0
+00001040  7200                      63          move.l  #0,d1
+00001042  243C 00000280             64          move.l  #640,d2
+00001048  263C 00000244             65          move.l  #580,d3
+0000104E  7800                      66          move.l  #0,d4
+00001050  7A00                      67          move.l  #0,d5
+00001052  4EB9 00001116             68          jsr drawBitmap
+00001058  705E                      69          move.l  #SWAP_BUFFER_TRAP_CODE,d0
+0000105A  4E4F                      70          trap #15
+0000105C                            71  gameStart                                       ; Waits for 'R' to be pressed for restart
+0000105C  7013                      72          move.l  #READ_KEYBOARD_TRAP_CODE,d0
+0000105E  7252                      73          move.l  #R_KEY_SPECIFIER,d1
+00001060  4E4F                      74          trap    #15
+00001062                            75          
+00001062  B2BC 000000FF             76          cmp.l   #$000000FF,d1
+00001068  66F2                      77          bne     gameStart        
+0000106A                            78  gameLoad                                        ; Initalizes score, player position, and bullets
+0000106A  700B                      79          move.l  #CLEAR_SCREEN_TRAP_CODE,d0
+0000106C  223C 0000FF00             80          move.l  #$0000FF00,d1
+00001072  4E4F                      81          trap    #15
+00001074  4EB9 000012A0             82          jsr initScore
+0000107A  4EB9 0004007E             83          jsr initPlayer
+00001080  4EB9 0003FD8C             84          jsr clearBullets
+00001086                            85  gameLoop                                        ; Looks for player input, spawns bullets
+00001086  705E                      86          move.l  #SWAP_BUFFER_TRAP_CODE,d0
+00001088  4E4F                      87          trap #15
+0000108A  4EB9 00040094             88          jsr handleInput
+00001090  4EB9 0003FDC6             89          jsr initBullet
+00001096                            90          
+00001096                            91  renderGameLoop                                  ; Draws player, score, bullets, checks collisions
+00001096  4EB9 0004013A             92          jsr renderPlayer
+0000109C  4EB9 000012D0             93          jsr scoreUpdate
+000010A2  4EB9 0003FF06             94          jsr collisionCheck
+000010A8  4EB9 0003FE70             95          jsr renderBullets
+000010AE                            96          
+000010AE  0C80 00000001             97          cmpi.l  #1,d0                           ; If there's been a collision, the game ends
+000010B4  66D0                      98          bne gameLoop
+000010B6                            99  gameOver                                        ; Clears screen for restart prompt      
+000010B6  4EB9 0003FE54            100          jsr setPenFillBlack
+000010BC  7200                     101          move.l  #0,d1
+000010BE  7464                     102          move.l  #100,d2
+000010C0  263C 00000280            103          move.l  #640,d3
+000010C6  283C 00000244            104          move.l  #580,d4
+000010CC  7057                     105          move.l  #DRAW_RECT_TRAP_CODE,d0
+000010CE  4E4F                     106          trap #15
+000010D0                           107          
+000010D0  705E                     108          move.l  #SWAP_BUFFER_TRAP_CODE,d0
+000010D2  4E4F                     109          trap #15
+000010D4                           110          
+000010D4  41F9 00040A1A            111          lea gameEndScreen,a0
+000010DA  7000                     112          move.l  #0,d0
+000010DC  7200                     113          move.l  #0,d1
+000010DE  243C 00000190            114          move.l  #400,d2
+000010E4  263C 000000C8            115          move.l  #200,d3
+000010EA  7878                     116          move.l  #120,d4
+000010EC  2A3C 000000C8            117          move.l  #200,d5
+000010F2  4EB9 00001116            118          jsr drawBitmap
+000010F8  705E                     119          move.l  #SWAP_BUFFER_TRAP_CODE,d0
+000010FA  4E4F                     120          trap #15
+000010FC                           121  restartPrompt                                   ; Waits for 'R' to be pressed for restart
+000010FC  7013                     122          move.l  #READ_KEYBOARD_TRAP_CODE,d0
+000010FE  7252                     123          move.l  #R_KEY_SPECIFIER,d1
+00001100  4E4F                     124          trap    #15
+00001102                           125          
+00001102  B2BC 000000FF            126          cmp.l   #$000000FF,d1
+00001108  6700 FF60                127          beq     gameLoad
+0000110C  66EE                     128          bne     restartPrompt
+0000110E                           129          
+0000110E  FFFF FFFF                130          SIMHALT             ; halt simulator
+00001112  4E72 2000                131          STOP #$2000
+00001116                           132  bitmapDraw INCLUDE "bitmapRender.x68"
+00001116                           133  
+00001116                           134  ALL_REG         REG     D0-D7/A0-A6
+00001116                           135  
+00001116  =0000000A                136  BITMAP_DATA_START       EQU     10
+00001116  =00000002                137  BITMAP_SIZE             EQU     02
+00001116  =00000012                138  BITMAP_WIDTH            EQU     18
+00001116  =00000016                139  BITMAP_HEIGHT           EQU     22
+00001116  =0000001C                140  BITMAP_BIT_DEPTH        EQU     28
+00001116                           141  
+00001116  =00000000                142  CHUNK_X         EQU     0
+00001116  =00000004                143  CHUNK_Y         EQU     4
+00001116  =00000008                144  CHUNK_WIDTH     EQU     8
+00001116  =0000000C                145  CHUNK_HEIGHT    EQU     12
+00001116  =00000010                146  DISPLAY_X       EQU     16
+00001116  =00000014                147  DISPLAY_Y       EQU     20
+00001116  =00000020                148  BITMAP_POINTER  EQU     32
+00001116                           149  
+00001116  =00000050                150  PEN_COLOR_TRAP_CODE     EQU     80
+00001116  =00000052                151  DRAW_PIXEL_TRAP_CODE    EQU     82
+00001116                           152  
+00001116                           153  
+00001116                           154  drawBitmap
+00001116  48E7 FFFE                155          movem.l ALL_REG, -(sp)          ; Stores argument registers on the stack to reference later
+0000111A  206F 0020                156          move.l  BITMAP_POINTER(sp),a0
+0000111E  2428 000A                157          move.l  BITMAP_DATA_START(a0),d2
+00001122  2628 0002                158          move.l  BITMAP_SIZE(a0),d3
+00001126  2E28 0012                159          move.l  BITMAP_WIDTH(a0),d7
+0000112A  2A28 0016                160          move.l  BITMAP_HEIGHT(a0),d5
+0000112E  2C28 001C                161          move.l  BITMAP_BIT_DEPTH(a0),d6
+00001132                           162     
+00001132  43F9 0000123F            163          lea     fileError,a1
+00001138  3010                     164          move.w  (a0),d0
+0000113A  0C40 424D                165          cmpi.   #$424D,d0
+0000113E  6600 009E                166          bne     errorHandler       
+00001142                           167   
+00001142  E15A                     168          rol.w   #8,d2
+00001144  4842                     169          swap.w  d2
+00001146  E15A                     170          rol.w   #8,d2
+00001148  2442                     171          move.l  d2,a2
+0000114A  D5C8                     172          adda.l  a0,a2   ;a2 is now pointed at the start of the bitmap pixel data.
+0000114C                           173  
+0000114C  E15B                     174          rol.w   #8,d3   ;Swaps for the size of the bitmap
+0000114E  4843                     175          swap.w  d3
+00001150  E15B                     176          rol.w   #8,d3
+00001152                           177          
+00001152  E15F                     178          rol.w   #8,d7   ;Swaps for the width of the bitmap
+00001154  4847                     179          swap.w  d7
+00001156  E15F                     180          rol.w   #8,d7
+00001158                           181          
+00001158  E15D                     182          rol.w   #8,d5   ;Swaps for the height of the bitmap
+0000115A  4845                     183          swap.w  d5
+0000115C  E15D                     184          rol.w   #8,d5
+0000115E                           185          
+0000115E  E15E                     186          rol.w   #8,d6   ;Swaps for the bit depth of the bitmap
+00001160  4846                     187          swap.w  d6
+00001162  E15E                     188          rol.w   #8,d6
+00001164                           189          
+00001164  43F9 000011E8            190          lea     sizeError,a1
+0000116A  0C86 00000020            191          cmpi.l  #32,d6
+00001170  6600 006C                192          bne     errorHandler
+00001174                           193          
+00001174  2005                     194          move.l  d5,d0   ;Moves bitmap height into d0 to use for calculating offset into bitmap data
+00001176                           195          
+00001176  222F 0000                196          move.l  CHUNK_X(sp),d1
+0000117A  242F 0004                197          move.l  CHUNK_Y(sp),d2
+0000117E  262F 0010                198          move.l  DISPLAY_X(sp),d3
+00001182  2C2F 0014                199          move.l  DISPLAY_Y(sp),d6
+00001186  2A2F 0008                200          move.l  CHUNK_WIDTH(sp),d5
+0000118A  282F 000C                201          move.l  CHUNK_HEIGHT(sp),d4
+0000118E                           202          
+0000118E  9084                     203          sub.l   d4,d0
+00001190  9082                     204          sub.l   d2,d0
+00001192  C0C7                     205          mulu    d7,d0
+00001194  D081                     206          add.l   d1,d0
+00001196  E588                     207          lsl.l   #2,d0
+00001198  D5C0                     208          adda.l  d0,a2
+0000119A                           209          
+0000119A  D886                     210          add.l   d6,d4
+0000119C  DA83                     211          add.l   d3,d5
+0000119E                           212          
+0000119E  221A                     213          move.l  (a2)+,d1        
+000011A0  E089                     214          lsr.l   #8,d1           ; The pixel data is left-shifted by 8 bits to organize the hex color codes
+000011A2                           215                                  ; for the trap code and ignore the alpha value.
+000011A2  7050                     216          move.l  #PEN_COLOR_TRAP_CODE,d0
+000011A4  4E4F                     217          trap    #15
+000011A6                           218          
+000011A6  2203                     219          move.l  d3,d1
+000011A8  2404                     220          move.l  d4,d2
+000011AA  7052                     221          move.l  #DRAW_PIXEL_TRAP_CODE,d0
+000011AC                           222         
+000011AC                           223  drawRow:
+000011AC  4E4F                     224          trap    #15
+000011AE  221A                     225          move.l  (a2)+,d1
+000011B0  E089                     226          lsr.l   #8,d1                   
+000011B2  7050                     227          move.l  #PEN_COLOR_TRAP_CODE,d0
+000011B4  4E4F                     228          trap    #15
+000011B6  7052                     229          move.l  #DRAW_PIXEL_TRAP_CODE,d0
+000011B8                           230          
+000011B8  5283                     231          addi.l  #1,d3
+000011BA  2203                     232          move.l  d3,d1
+000011BC  BA83                     233          cmp.l   d3,d5
+000011BE  66EC                     234          bne drawRow
+000011C0  2607                     235          move.l  d7,d3
+000011C2  96AF 0008                236          sub.l   CHUNK_WIDTH(sp),d3
+000011C6  E58B                     237          lsl.l   #2,d3
+000011C8  D5C3                     238          adda.l  d3,a2
+000011CA  262F 0010                239          move.l  DISPLAY_X(sp),d3
+000011CE  2203                     240          move.l  d3,d1
+000011D0                           241          
+000011D0  5384                     242          subi.l  #1,d4 ;The Y coordinate is decremented instead of incremented because the bitmap
+000011D2                           243                        ;stores information from the bottom of the image, so if it were incremented
+000011D2                           244                        ;the image would display upside down.
+000011D2  2404                     245          move.l  d4,d2
+000011D4  B886                     246          cmp.l   d6,d4
+000011D6  66D4                     247          bne drawRow
+000011D8  4CDF 7FFF                248          movem.l (sp)+,ALL_REG
+000011DC  4E75                     249          rts
+000011DE                           250          
+000011DE                           251  errorHandler:
+000011DE  700D                     252          move.l  #13,d0
+000011E0  4E4F                     253          trap #15  
+000011E2  4CDF 7FFF                254          movem.l (sp)+,ALL_REG
+000011E6  4E75                     255          rts
+000011E8                           256  
+000011E8= 45 72 72 6F 72 3A ...    257  sizeError       dc.b 'Error: this is not a 32-bit bitmap. Please try a different bitmap and restart program.',0
+0000123F= 45 72 72 6F 72 3A ...    258  fileError       dc.b 'Error: the file entered is not a bitmap file. Please use a bitmap file and restart the program.',0
+0000129F                           259  
+0000129F                           260  
+0000129F                           261  
+0000129F                           262  
+0000129F                           263  
+0000129F                           264  
+0000129F                           265  
+0000129F                           266  
+0000129F                           267  
+0000129F                           268  
+0000129F                           269  
+0000129F                           270  
+0000129F                           271  
+0000129F                           272  
+0000129F                           273  
+0000129F                           274  
+0000129F                           275  
+0000129F                           276  
+0000129F                           277  
+0000129F                           278  
+0000129F                           279  
+0000129F                           280  -------------------- end include --------------------
+0000129F                           281  score      INCLUDE "scoreBanner.x68"
+0000129F                           282  
+0000129F  =000001EF                283  SCORE_X         EQU 495
+0000129F  =00000009                284  SCORE_Y         EQU 9
+0000129F  =00000088                285  SCORE_WIDTH     EQU 136
+0000129F  =00000052                286  SCORE_HEIGHT    EQU 82
+0000129F  =00000003                287  UPDATE_COUNT_MAX    EQU 3
+0000129F  =0000000F                288  INCREMENT_COUNT     EQU 15
+0000129F= 01                       289  Padding    dc.b    1            ; Needed to keep functions on even byte address
+000012A0                           290  
+000012A0                           291  initScore
+000012A0  23FC 00000000 0003FCE6   292      move.l  #0,(onesScore)
+000012AA  23FC 00000000 0003FCEA   293      move.l  #0,(tensScore)
+000012B4  41F9 000014AE            294      lea scoreBanner,a0
+000012BA  7000                     295      move.l  #0,d0
+000012BC  7200                     296      move.l  #0,d1
+000012BE  243C 00000280            297      move.l  #640,d2
+000012C4  7664                     298      move.l  #100,d3
+000012C6  7800                     299      move.l  #0,d4
+000012C8  7A00                     300      move.l  #0,d5
+000012CA  4EB8 1116                301      jsr drawBitmap
+000012CE  4E75                     302      rts
+000012D0                           303  
+000012D0                           304  scoreUpdate
+000012D0  48E7 FFFE                305      movem.l ALL_REG, -(sp)
+000012D4  0CB9 00000000 0003FCEE   306      cmpi.l  #0,(updateCount)
+000012DE  6E00 013E                307      bgt scoreSkip
+000012E2                           308      
+000012E2  23FC 00000003 0003FCEE   309      move.l  #UPDATE_COUNT_MAX,(updateCount)
+000012EC  41F9 000014AE            310      lea scoreBanner,a0                      ;Redraws background chunk over score position.
+000012F2  203C 000001EF            311      move.l  #SCORE_X,d0
+000012F8  7209                     312      move.l  #SCORE_Y,d1
+000012FA  243C 00000088            313      move.l  #SCORE_WIDTH,d2
+00001300  7652                     314      move.l  #SCORE_HEIGHT,d3
+00001302  283C 000001EF            315      move.l  #SCORE_X,d4
+00001308  7A09                     316      move.l  #SCORE_Y,d5
+0000130A  4EB8 1116                317      jsr drawBitmap
+0000130E                           318      
+0000130E  223C 00FFFFFF            319      move.l  #COLOR_WHITE,d1                 ;Initializes pen parameters to prepare to draw segments
+00001314  7051                     320      move.l  #FILL_COLOR_TRAP_CODE,d0
+00001316  4E4F                     321      trap    #15
+00001318  7050                     322      move.l  #PEN_COLOR_TRAP_CODE,d0
+0000131A  4E4F                     323      trap    #15
+0000131C  7057                     324      move.l  #DRAW_RECT_TRAP_CODE,d0
+0000131E                           325  onesSegmentPrep
+0000131E                           326      
+0000131E  43F9 0003FD1C            327      lea     onesSegmentX1,a1                ;Loads addresses of coordinate tables
+00001324  45F9 0003FD2A            328      lea     onesSegmentY1,a2
+0000132A  47F9 0003FD38            329      lea     onesSegmentX2,a3
+00001330  49F9 0003FD46            330      lea     onesSegmentY2,a4
+00001336  4281                     331      clr.l   d1
+00001338  4282                     332      clr.l   d2
+0000133A  4283                     333      clr.l   d3
+0000133C  4284                     334      clr.l   d4
+0000133E                           335      
+0000133E  4BF9 0003FCF6            336      lea     digitBitmask,a5                 ;Gets bitmask for score value
+00001344  2A39 0003FCE6            337      move.l  (onesScore),d5
+0000134A  1C35 5000                338      move.b  (a5,d5),d6
+0000134E  4287                     339      clr.l   d7
+00001350  7E18                     340      move.l  #24,d7
+00001352  4EB9 000013EC            341      jsr     segmentDrawLoop
+00001358  0CB9 0000000F 0003FCF2   342      cmpi.l  #INCREMENT_COUNT,(incrementCount)
+00001362  6600 000E                343      bne     skipScoreIncrement
+00001366  5285                     344      addi.l  #1,d5
+00001368  23FC 00000000 0003FCF2   345      move.l  #0,(incrementCount)
+00001372                           346  skipScoreIncrement
+00001372  52B9 0003FCF2            347      addi.l  #1,(incrementCount)
+00001378  BABC 0000000A            348      cmp.l   #10,d5
+0000137E  6D00 0012                349      blt     tensSegmentPrep
+00001382  2C39 0003FCEA            350      move.l  (tensScore),d6
+00001388  5286                     351      addi.l  #1,d6
+0000138A  23C6 0003FCEA            352      move.l  d6,(tensScore)
+00001390  7A00                     353      move.l  #0,d5
+00001392                           354      
+00001392                           355  tensSegmentPrep
+00001392  23C5 0003FCE6            356      move.l  d5,(onesScore)
+00001398  43F9 0003FD54            357      lea     tensSegmentX1,a1                ;Loads addresses of coordinate tables
+0000139E  45F9 0003FD62            358      lea     tensSegmentY1,a2
+000013A4  47F9 0003FD70            359      lea     tensSegmentX2,a3
+000013AA  49F9 0003FD7E            360      lea     tensSegmentY2,a4
+000013B0  7200                     361      move.l  #0,d1
+000013B2  7400                     362      move.l  #0,d2
+000013B4  7600                     363      move.l  #0,d3
+000013B6  7800                     364      move.l  #0,d4
+000013B8  7A00                     365      move.l  #0,d5
+000013BA                           366      
+000013BA  4BF9 0003FCF6            367      lea     digitBitmask,a5                 ;Gets bitmask for score value
+000013C0  2A39 0003FCEA            368      move.l  (tensScore),d5
+000013C6  1C35 5000                369      move.b  (a5,d5),d6
+000013CA  4287                     370      clr.l   d7
+000013CC  7E18                     371      move.l  #24,d7
+000013CE  4EB9 000013EC            372      jsr     segmentDrawLoop
+000013D4  BABC 0000000A            373      cmp.l   #10,d5
+000013DA  6D00 0004                374      blt     scoreReturn
+000013DE  7A00                     375      move.l  #0,d5
+000013E0                           376      
+000013E0                           377  scoreReturn
+000013E0  23C5 0003FCEA            378      move.l  d5,(tensScore)
+000013E6  4CDF 7FFF                379      movem.l (sp)+,ALL_REG
+000013EA  4E75                     380      rts
+000013EC                           381      
+000013EC                           382  segmentDrawLoop
+000013EC  1206                     383      move.b  d6,d1
+000013EE  C23C 0001                384      and.b   #1,d1
+000013F2  6700 0016                385      beq     skipDraw
+000013F6                           386      
+000013F6  7200                     387      move.l  #0,d1
+000013F8  7400                     388      move.l  #0,d2
+000013FA  7600                     389      move.l  #0,d3
+000013FC  7800                     390      move.l  #0,d4
+000013FE  4DF9 0003FD00            391      lea     segFuncPtr,a6                   ;Grabs the function pointer for the segment to draw
+00001404  2C76 7000                392      move.l  (a6,d7),a6
+00001408  4E96                     393      jsr     (a6)
+0000140A                           394      
+0000140A                           395  skipDraw
+0000140A  E20E                     396      lsr.b   #1,d6
+0000140C  5987                     397      subi.l  #4,d7
+0000140E  0C87 00000000            398      cmpi.l  #0,d7
+00001414  6CD6                     399      bge segmentDrawLoop  
+00001416                           400  scoreDone
+00001416  53B9 0003FCEE            401      subi.l  #1,(updateCount)
+0000141C  4E75                     402      rts
+0000141E                           403  scoreSkip
+0000141E  53B9 0003FCEE            404      subi.l  #1,(updateCount)
+00001424  4CDF 7FFF                405      movem.l (sp)+,ALL_REG
+00001428  4E75                     406      rts
+0000142A                           407  
+0000142A                           408  
+0000142A                           409  drawSegA
+0000142A  3211                     410      move.w  (a1),d1
+0000142C  3613                     411      move.w  (a3),d3
+0000142E  3412                     412      move.w  (a2),d2
+00001430  3814                     413      move.w  (a4),d4
+00001432  4E4F                     414      trap    #15
+00001434  4E75                     415      rts
+00001436                           416      
+00001436                           417  drawSegB
+00001436  3229 0002                418      move.w  2(a1),d1
+0000143A  362B 0002                419      move.w  2(a3),d3
+0000143E  342A 0002                420      move.w  2(a2),d2
+00001442  382C 0002                421      move.w  2(a4),d4
+00001446  4E4F                     422      trap    #15
+00001448  4E75                     423      rts
+0000144A                           424      
+0000144A                           425  drawSegC
+0000144A  3229 0004                426      move.w  4(a1),d1
+0000144E  362B 0004                427      move.w  4(a3),d3
+00001452  342A 0004                428      move.w  4(a2),d2
+00001456  382C 0004                429      move.w  4(a4),d4
+0000145A  4E4F                     430      trap    #15
+0000145C  4E75                     431      rts
+0000145E                           432      
+0000145E                           433  drawSegD
+0000145E  3229 0006                434      move.w  6(a1),d1
+00001462  362B 0006                435      move.w  6(a3),d3
+00001466  342A 0006                436      move.w  6(a2),d2
+0000146A  382C 0006                437      move.w  6(a4),d4
+0000146E  4E4F                     438      trap    #15
+00001470  4E75                     439      rts
+00001472                           440      
+00001472                           441  drawSegE
+00001472  3229 0008                442      move.w  8(a1),d1
+00001476  362B 0008                443      move.w  8(a3),d3
+0000147A  342A 0008                444      move.w  8(a2),d2
+0000147E  382C 0008                445      move.w  8(a4),d4
+00001482  4E4F                     446      trap    #15
+00001484  4E75                     447      rts
+00001486                           448      
+00001486                           449  drawSegF
+00001486  3229 000A                450      move.w  10(a1),d1
+0000148A  362B 000A                451      move.w  10(a3),d3
+0000148E  342A 000A                452      move.w  10(a2),d2
+00001492  382C 000A                453      move.w  10(a4),d4
+00001496  4E4F                     454      trap    #15
+00001498  4E75                     455      rts
+0000149A                           456      
+0000149A                           457  drawSegG
+0000149A  3229 000C                458      move.w  12(a1),d1
+0000149E  362B 000C                459      move.w  12(a3),d3
+000014A2  342A 000C                460      move.w  12(a2),d2
+000014A6  382C 000C                461      move.w  12(a4),d4
+000014AA  4E4F                     462      trap    #15
+000014AC  4E75                     463      rts
+000014AE                           464  
+000014AE                           465  scoreBanner INCBIN "ScoreBackground.bmp"
+0003FCE6= 00000000                 466  onesScore       dc.l    0
+0003FCEA= 00000000                 467  tensScore       dc.l    0
+0003FCEE= 00000000                 468  updateCount     dc.l    0
+0003FCF2= 00000000                 469  incrementCount  dc.l    0
+0003FCF6= 7E 30 6D 79 33 5B ...    470  digitBitmask    dc.b    $7E,$30,$6D,$79,$33,$5B,$5F,$70,$7F,$7B ;Bitmasks for digits 0-9 for seven segment display
+0003FD00= 0000142A 00001436 ...    471  segFuncPtr      dc.l    drawSegA,drawSegB,drawSegC,drawSegD,drawSegE,drawSegF,drawSegG
+0003FD1C= 024E 026C 026C 0...      472  onesSegmentX1   dc.w    590,620,620,590,590,590,590 ;Holds rectangle coordinates for each segment A-G, stored in long format where first word is Top left X, second word is bottom right X.
+0003FD2A= 000A 000A 0032 0...      473  onesSegmentY1   dc.w    10,10,50,80,50,10,45 ;Same as previous array, but for Y coordinates.
+0003FD38= 0276 0276 0276 0...      474  onesSegmentX2   dc.w    630,630,630,630,600,600,630
+0003FD46= 0014 0032 005A 0...      475  onesSegmentY2   dc.w    20,50,90,90,90,50,55
+0003FD54= 021C 023A 023A 0...      476  tensSegmentX1   dc.w    540,570,570,540,540,540,540 ;Holds rectangle coordinates for each segment A-G, stored in long format where first word is Top left X, second word is bottom right X.
+0003FD62= 000A 000A 0032 0...      477  tensSegmentY1   dc.w    10,10,50,80,50,10,45 ;Same as previous array, but for Y coordinates.
+0003FD70= 0244 0244 0244 0...      478  tensSegmentX2   dc.w    580,580,580,580,550,550,580
+0003FD7E= 0014 0032 005A 0...      479  tensSegmentY2   dc.w    20,50,90,90,90,50,55
+0003FD8C                           480  
+0003FD8C                           481  
+0003FD8C                           482  
+0003FD8C                           483  
+0003FD8C                           484  
+0003FD8C                           485  
+0003FD8C                           486  
+0003FD8C                           487  
+0003FD8C                           488  
+0003FD8C                           489  
+0003FD8C                           490  -------------------- end include --------------------
+0003FD8C                           491  bullet     INCLUDE "hailManager.x68"
+0003FD8C                           492  
+0003FD8C  =00000058                493  DRAW_CIRCLE_TRAP_CODE EQU 88
+0003FD8C  =00000005                494  BULLET_RADIUS   EQU 5
+0003FD8C  =000001A4                495  SCREEN_TOP      EQU 420     ; 105 in fixed point
+0003FD8C  =00000910                496  SCREEN_BOTTOM   EQU 2320    ; 580 in fixed point
+0003FD8C  =00000003                497  SPAWN_TIME_MAX  EQU 3
+0003FD8C                           498  
+0003FD8C  =0000000C                499  INT_VELOCITY    EQU 12      ; 3 pixels/frame in fixed point
+0003FD8C  =00000005                500  ACCELERATION    EQU 5       ; 1.25 pixels/frame in fixed point
+0003FD8C                           501  
+0003FD8C                           502  clearBullets
+0003FD8C  41F9 0003FF86            503      lea bulletsX1,a0
+0003FD92  43F9 0003FFD6            504      lea bulletsY1,a1
+0003FD98  45F9 00040026            505      lea bulletVelocity,a2
+0003FD9E  7E00                     506      move.l  #0,d7
+0003FDA0  2A39 0003FF82            507      move.l  (numBullets),d5
+0003FDA6                           508  clearLoop                   ; Moves 0 into each array value, clearing the bullets
+0003FDA6  21BC 00000000 7000       509      move.l  #0,(a0,d7)
+0003FDAE  23BC 00000000 7000       510      move.l  #0,(a1,d7)
+0003FDB6  25BC 00000000 7000       511      move.l  #0,(a2,d7)
+0003FDBE  5887                     512      addi.l  #4,d7
+0003FDC0  BE85                     513      cmp.l   d5,d7
+0003FDC2  6DE2                     514      blt     clearLoop
+0003FDC4  4E75                     515      rts
+0003FDC6                           516      
+0003FDC6                           517  initBullet
+0003FDC6  48E7 FFFE                518      movem.l ALL_REG, -(sp)
+0003FDCA  2839 00040076            519      move.l  (bulletSpawnTime),d4
+0003FDD0  0C84 00000000            520      cmpi.l  #0,d4                               ; If it isn't time to spawn a new bullet, exits function
+0003FDD6  6600 004A                521      bne initDone
+0003FDDA  23FC 00000003 00040076   522      move.l  #SPAWN_TIME_MAX,(bulletSpawnTime)
+0003FDE4                           523      
+0003FDE4  4EB9 0003FE2E            524      jsr findOpenBullet                          ; Loads open bullet offset into d7
+0003FDEA  43F9 0003FFD6            525      lea     bulletsY1,a1
+0003FDF0  45F9 00040026            526      lea     bulletVelocity,a2
+0003FDF6  4EB9 0003FF60            527      jsr     getRandomWord                       ; Generates random word value
+0003FDFC  3613                     528      move.w  (a3),d3
+0003FDFE  86FC 026C                529      divu    #620,d3
+0003FE02  4243                     530      clr.w   d3
+0003FE04  4843                     531      swap    d3
+0003FE06  0683 0000000A            532      addi.l  #10,d3                              ; Confines random value between 10 and 630 for bullet X coordinate
+0003FE0C  E58B                     533      lsl.l   #2,d3
+0003FE0E  2183 7000                534      move.l  d3,(a0,d7)                          ; Bullet is created with random X coordinate, Y at top of screen,
+0003FE12  23BC 000001A4 7000       535      move.l  #SCREEN_TOP,(a1,d7)                 ; and initial velocity of 3 pixels/frame
+0003FE1A  25BC 0000000C 7000       536      move.l  #INT_VELOCITY,(a2,d7)
+0003FE22                           537  initDone
+0003FE22  53B9 00040076            538      subi.l  #1,(bulletSpawnTime)
+0003FE28  4CDF 7FFF                539      movem.l (sp)+,ALL_REG
+0003FE2C  4E75                     540      rts
+0003FE2E                           541      
+0003FE2E                           542      
+0003FE2E                           543  findOpenBullet
+0003FE2E  7E00                     544      move.l  #0,d7
+0003FE30  2A39 0003FF82            545      move.l  (numBullets),d5
+0003FE36  41F9 0003FF86            546      lea     bulletsX1,a0
+0003FE3C                           547  openLoop
+0003FE3C  2C30 7000                548      move.l  (a0,d7),d6
+0003FE40  0C86 00000000            549      cmpi.l  #0,d6
+0003FE46  6700 000A                550      beq     openDone
+0003FE4A  5887                     551      addi.l  #4,d7
+0003FE4C  BE85                     552      cmp.l   d5,d7
+0003FE4E  6CD2                     553      bge     initDone
+0003FE50  6DEA                     554      blt     openLoop
+0003FE52                           555  openDone
+0003FE52  4E75                     556      rts
+0003FE54                           557      
+0003FE54                           558  setPenFillBlack
+0003FE54  7200                     559      move.l  #COLOR_BLACK,d1
+0003FE56  7051                     560      move.l  #FILL_COLOR_TRAP_CODE,d0
+0003FE58  4E4F                     561      trap    #15
+0003FE5A  7050                     562      move.l  #PEN_COLOR_TRAP_CODE,d0
+0003FE5C  4E4F                     563      trap    #15
+0003FE5E  4E75                     564      rts  
+0003FE60                           565  
+0003FE60                           566  setPenFillWhite
+0003FE60  223C 00FFFFFF            567      move.l  #COLOR_WHITE,d1
+0003FE66  7051                     568      move.l  #FILL_COLOR_TRAP_CODE,d0
+0003FE68  4E4F                     569      trap    #15
+0003FE6A  7050                     570      move.l  #PEN_COLOR_TRAP_CODE,d0
+0003FE6C  4E4F                     571      trap    #15
+0003FE6E  4E75                     572      rts
+0003FE70                           573         
+0003FE70                           574  renderBullets
+0003FE70  48E7 FFFE                575      movem.l ALL_REG, -(sp)
+0003FE74  7E00                     576      move.l  #0,d7
+0003FE76  41F9 0003FF86            577      lea     bulletsX1,a0
+0003FE7C  43F9 0003FFD6            578      lea     bulletsY1,a1
+0003FE82  45F9 00040026            579      lea     bulletVelocity,a2
+0003FE88  2A39 0003FF82            580      move.l  (numBullets),d5
+0003FE8E                           581  renderLoop
+0003FE8E  2230 7000                582      move.l  (a0,d7),d1                  ; If bullet X coordinate is 0, the bullet doesn't exist
+0003FE92  6700 0066                583      beq     skipRender                  ; and it moves on to the next bullet in the array
+0003FE96                           584      
+0003FE96  E489                     585      lsr.l   #2,d1                       ; Right shift to get rid of fixed point for position drawing
+0003FE98  2C01                     586      move.l  d1,d6     
+0003FE9A  2431 7000                587      move.l  (a1,d7),d2
+0003FE9E  E48A                     588      lsr.l   #2,d2
+0003FEA0  2601                     589      move.l  d1,d3
+0003FEA2  5A83                     590      addi.l  #BULLET_RADIUS,d3
+0003FEA4  2802                     591      move.l  d2,d4
+0003FEA6  5A84                     592      addi.l  #BULLET_RADIUS,d4
+0003FEA8  4EB9 0003FE54            593      jsr setPenFillBlack                 ; Draw black circle at old bullet position to get rid of old bullet
+0003FEAE  7058                     594      move.l  #DRAW_CIRCLE_TRAP_CODE,d0
+0003FEB0  2206                     595      move.l  d6,d1
+0003FEB2  4E4F                     596      trap #15
+0003FEB4  4EB9 0003FE60            597      jsr setPenFillWhite
+0003FEBA  7058                     598      move.l  #DRAW_CIRCLE_TRAP_CODE,d0
+0003FEBC  2206                     599      move.l  d6,d1
+0003FEBE  E58A                     600      lsl.l   #2,d2                       ; Left shift to prepare for fixed point velocity addition
+0003FEC0  D4B2 7000                601      add.l   (a2,d7),d2                  ; Apply velocity to bullet Y coordinates
+0003FEC4  2382 7000                602      move.l  d2,(a1,d7)
+0003FEC8  E58C                     603      lsl.l   #2,d4
+0003FECA  D8B2 7000                604      add.l   (a2,d7),d4
+0003FECE  5AB2 7000                605      addi.l  #ACCELERATION,(a2,d7)       ; Increment velocity by fixed point acceleration amount
+0003FED2  E48C                     606      lsr.l   #2,d4                       ; Right shift to get rid of fixed point for position drawing 
+0003FED4  E48A                     607      lsr.l   #2,d2
+0003FED6  4E4F                     608      trap #15                            ; Draw white circle at new bullet position
+0003FED8  0C82 00000910            609      cmpi.l  #SCREEN_BOTTOM,d2           ; If bullet reaches bottom of screen, delete bullet from array
+0003FEDE  6D00 001A                610      blt     skipRender
+0003FEE2                           611  deleteBullet
+0003FEE2  21BC 00000000 7000       612      move.l  #0,(a0,d7)
+0003FEEA  23BC 00000000 7000       613      move.l  #0,(a1,d7)
+0003FEF2  25BC 00000000 7000       614      move.l  #0,(a2,d7)
+0003FEFA                           615  skipRender
+0003FEFA  5887                     616      addi.l  #4,d7
+0003FEFC  BE85                     617      cmp.l   d5,d7                       ; If bullet offset equals numBullets, all bullets have been dealt with
+0003FEFE  6D8E                     618      blt     renderLoop
+0003FF00                           619  renderDone
+0003FF00  4CDF 7FFF                620      movem.l (sp)+,ALL_REG
+0003FF04  4E75                     621      rts
+0003FF06                           622      
+0003FF06                           623      
+0003FF06                           624      
+0003FF06                           625  collisionCheck
+0003FF06  4EB9 00040188            626      jsr     getPlayerCoord              ; Loads player coordinates into d1-d4
+0003FF0C  2039 0003FF82            627      move.l  (numBullets),d0
+0003FF12  7E00                     628      move.l  #0,d7
+0003FF14  41F9 0003FF86            629      lea     bulletsX1,a0
+0003FF1A  43F9 0003FFD6            630      lea     bulletsY1,a1
+0003FF20                           631  collisionLoop
+0003FF20  2A30 7000                632      move.l  (a0,d7),d5
+0003FF24  E48D                     633      lsr.l   #2,d5                       ; Right shift to get rid of fixed point
+0003FF26  0C85 00000000            634      cmpi.l  #0,d5                       ; If bullet X coordinate is 0, the bullet doesn't exist
+0003FF2C  6700 0028                635      beq     noCollision                 ; and it moves on to the next bullet in the array
+0003FF30  BA83                     636      cmp.l   d3,d5                       ; If bullet left X is greater than player right X, no collision
+0003FF32  6E00 0022                637      bgt     noCollision
+0003FF36  5A85                     638      addi.l  #BULLET_RADIUS,d5
+0003FF38  BA81                     639      cmp.l   d1,d5                       ; If bullet right X is less than player left X, no collision
+0003FF3A  6D00 001A                640      blt     noCollision
+0003FF3E  2A31 7000                641      move.l  (a1,d7),d5
+0003FF42  E48D                     642      lsr.l   #2,d5                       ; Right shift to get rid of fixed point
+0003FF44  BA84                     643      cmp.l   d4,d5                       ; If bullet top Y is greater than player bottom Y, no collision
+0003FF46  6E00 000E                644      bgt     noCollision
+0003FF4A  5A85                     645      addi.l  #BULLET_RADIUS,d5
+0003FF4C  BA82                     646      cmp.l   d2,d5                       ; If bullet bottom Y is less than player top Y, no collision
+0003FF4E  6D00 0006                647      blt     noCollision
+0003FF52  7001                     648      move.l  #1,d0                       ; If all checks passed, stores 1 into d0 and returns, signifying collision
+0003FF54  4E75                     649      rts      
+0003FF56                           650  noCollision
+0003FF56  5887                     651      addi.l  #4,d7                       ; If all bullets checked with no collision, stores 0 into d0
+0003FF58  BE80                     652      cmp.l   d0,d7
+0003FF5A  6DC4                     653      blt     collisionLoop
+0003FF5C  7000                     654      move.l  #0,d0
+0003FF5E  4E75                     655      rts
+0003FF60                           656      
+0003FF60                           657  ; Random number generator gotten from Utsab who got it from the web.
+0003FF60                           658  getRandomWord
+0003FF60  48E7 FF00                659      movem.l D0-D7,-(sp)     ;save off regs
+0003FF64  47F9 0004007A            660      lea RANDOMVAL,a3
+0003FF6A  2013                     661      move.l  (a3),d0         ;get current seed longword
+0003FF6C  72AF                     662      move.l  #$AF-$100,d1        ;set EOR value
+0003FF6E  7412                     663      move.l  #18,d2          ;do this 19 times
+0003FF70                           664  keepLooping
+0003FF70  D080                     665      add.l   d0,d0           ;shift left 1 bit
+0003FF72  6402                     666      bcc.s   doneLooping     ;if bit not set skip feedback
+0003FF74                           667  
+0003FF74  B340                     668      eor.w   d1,d0           ;do Galois LFSR feedback
+0003FF76                           669  doneLooping
+0003FF76  51CA FFF8                670      dbf d2,keepLooping      ;loop
+0003FF7A                           671  
+0003FF7A  2680                     672      MOVE.l  d0,(a3)         ;save back to seed longword
+0003FF7C                           673  
+0003FF7C                           674  
+0003FF7C  4CDF 00FF                675      movem.l (sp)+,D0-D7     ;restore regs
+0003FF80  4E75                     676      RTS
+0003FF82                           677  
+0003FF82= 00000050                 678  numBullets  dc.l    80                                          ; Set to four times the actual numBullets for the offset in findOpenBullet.
+0003FF86= 00000000 00000000 ...    679  bulletsX1   dc.l    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0     ; These arrays contain coordinate information for each possible bullet.
+0003FFD6= 00000000 00000000 ...    680  bulletsY1   dc.l    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0     ; All bullets are 5x5 pixels, so we don't need tables for X2 and Y2.
+00040026= 00000000 00000000 ...    681  bulletVelocity  dc.l    0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 ; Contains the current velocity of each bullet.
+00040076= 00000000                 682  bulletSpawnTime dc.l    0                                       ; Variable for bullet spawn time
+0004007A                           683  RANDOMVAL   ds.l    1                                           ; Stores random value generated by getRandomWord
+0004007E                           684  
+0004007E                           685  
+0004007E                           686  
+0004007E                           687  -------------------- end include --------------------
+0004007E                           688  player     INCLUDE "playerManager.x68"
+0004007E                           689  
+0004007E  =57415344                690  MOVEMENT_KEYBOARD_SPECIFIER     EQU     'W'<<24+'A'<<16+'S'<<8+'D'
+0004007E                           691  
+0004007E  =0000000A                692  MOVE_SPEED  EQU 10
+0004007E  =FFFFFFF6                693  NEG_MOVE_SPEED  EQU -10
+0004007E  =00000019                694  PLAYER_WIDTH    EQU 25
+0004007E  =00000015                695  PLAYER_HEIGHT   EQU 21
+0004007E                           696  
+0004007E                           697  initPlayer
+0004007E  23FC 000000C8 00040A12   698      move.l  #200,(playerX)
+00040088  23FC 0000012C 00040A16   699      move.l  #300,(playerY)
+00040092  4E75                     700      rts
+00040094                           701  
+00040094                           702  handleInput
+00040094  2839 00040A12            703      move.l  (playerX),d4
+0004009A  2A39 00040A16            704      move.l  (playerY),d5
+000400A0  223C 57415344            705      move.l  #MOVEMENT_KEYBOARD_SPECIFIER,d1
+000400A6  7013                     706      move.l  #READ_KEYBOARD_TRAP_CODE,d0
+000400A8  4E4F                     707      trap #15
+000400AA                           708      
+000400AA  B2BC 00FF0000            709      cmp.l   #$00FF0000,d1           ; Checks d1 value to see if any keys are pressed
+000400B0  6700 0024                710      beq     moveLeft
+000400B4  B2BC 000000FF            711      cmp.l   #$000000FF,d1
+000400BA  6700 002E                712      beq     moveRight
+000400BE  B2BC FF000000            713      cmp.l   #$FF000000,d1
+000400C4  6700 003C                714      beq     moveUp
+000400C8  B2BC 0000FF00            715      cmp.l   #$0000FF00,d1
+000400CE  6700 0046                716      beq     moveDown
+000400D2  6600 0058                717      bne     moveDone                ; If no keys pressed, player doesn't move
+000400D6                           718      
+000400D6                           719  moveLeft
+000400D6  0684 FFFFFFF6            720      addi.l  #NEG_MOVE_SPEED,d4      ; If 'A', move player left
+000400DC  0C84 00000005            721      cmpi.l  #5,d4
+000400E2  6C00 0048                722      bge     moveDone
+000400E6  7805                     723      move.l  #5,d4                   ; Stops player at edge of screen
+000400E8  4E75                     724      rts
+000400EA                           725  moveRight
+000400EA  0684 0000000A            726      addi.l  #MOVE_SPEED,d4          ; If 'D', move player right
+000400F0  0C84 00000262            727      cmpi.l  #610,d4
+000400F6  6F00 0034                728      ble     moveDone
+000400FA  283C 00000262            729      move.l  #610,d4                 ; Stops player at edge of screen
+00040100  4E75                     730      rts
+00040102                           731  moveUp
+00040102  0685 FFFFFFF6            732      addi.l  #NEG_MOVE_SPEED,d5      ; If 'W', move player up
+00040108  0C85 00000069            733      cmpi.l  #105,d5
+0004010E  6C00 001C                734      bge     moveDone
+00040112  7A69                     735      move.l  #105,d5                 ; Stops player at edge of screen
+00040114  4E75                     736      rts
+00040116                           737  moveDown
+00040116  0685 0000000A            738      addi.l  #MOVE_SPEED,d5          ; If 'S', move player down
+0004011C  0C85 000001C2            739      cmpi.l  #450,d5
+00040122  6F00 0008                740      ble     moveDone
+00040126  2A3C 000001C2            741      move.l  #450,d5                 ; Stops player at edge of screen
+0004012C                           742  moveDone
+0004012C  23C4 00040A12            743      move.l  d4,(playerX)            ; Store updated positions
+00040132  23C5 00040A16            744      move.l  d5,(playerY)
+00040138  4E75                     745      rts
+0004013A                           746      
+0004013A                           747      
+0004013A                           748  renderPlayer
+0004013A  7200                     749      move.l  #COLOR_BLACK,d1
+0004013C  7050                     750      move.l  #PEN_COLOR_TRAP_CODE,d0
+0004013E  4E4F                     751      trap    #15
+00040140  7051                     752      move.l  #FILL_COLOR_TRAP_CODE,d0
+00040142  4E4F                     753      trap    #15                     ; Sets pen and fill color to black
+00040144                           754      
+00040144  2C39 00040A12            755      move.l  (playerX),d6            ; Grabs player's current coordinates
+0004014A  2A39 00040A16            756      move.l  (playerY),d5
+00040150                           757  
+00040150  4EB9 00040188            758      jsr getPlayerCoord
+00040156  0683 0000000A            759      addi.l  #MOVE_SPEED,d3
+0004015C  0684 0000000A            760      addi.l  #MOVE_SPEED,d4
+00040162  0681 FFFFFFF6            761      addi.l  #NEG_MOVE_SPEED,d1
+00040168  0682 FFFFFFF6            762      addi.l  #NEG_MOVE_SPEED,d2
+0004016E  7057                     763      move.l  #DRAW_RECT_TRAP_CODE,d0
+00040170  4E4F                     764      trap    #15                     ; Draws black rectangle at old position of player,
+00040172                           765                                      ; removing old player drawing
+00040172  2806                     766      move.l  d6,d4
+00040174  41F9 000401A6            767      lea     playerBitmap,a0
+0004017A  7000                     768      move.l  #0,d0
+0004017C  7200                     769      move.l  #0,d1
+0004017E  7419                     770      move.l  #PLAYER_WIDTH,d2
+00040180  7615                     771      move.l  #PLAYER_HEIGHT,d3        
+00040182  4EB8 1116                772      jsr drawBitmap                  ; Draws bitmap of player at new position
+00040186                           773      
+00040186  4E75                     774      rts
+00040188                           775      
+00040188                           776  getPlayerCoord
+00040188  2239 00040A12            777      move.l  (playerX),d1
+0004018E  2439 00040A16            778      move.l  (playerY),d2
+00040194  2601                     779      move.l  d1,d3
+00040196  2802                     780      move.l  d2,d4
+00040198  0683 00000019            781      addi.l  #PLAYER_WIDTH,d3
+0004019E  0684 00000015            782      addi.l  #PLAYER_HEIGHT,d4
+000401A4  4E75                     783      rts
+000401A6                           784  
+000401A6                           785  playerBitmap  INCBIN "Santa.bmp"    ; Bitmap of player
+00040A12= 000000C8                 786  playerX     dc.l    200             ; Player Left X coordinate
+00040A16= 0000012C                 787  playerY     dc.l    300             ; Player Top Y coordinate
+00040A1A                           788  
+00040A1A                           789  
+00040A1A                           790  -------------------- end include --------------------
+00040A1A                           791  
+00040A1A                           792  gameEndScreen   INCBIN "GameOver.bmp"
+0008EC52                           793  gameStartScreen INCBIN "GameStart.bmp"
+001F948A                           794  gameLoading     INCBIN "Loading.bmp"
+0020CD42                           795  
+0020CD42                           796      END    START        ; last line of source
+
+No errors detected
+No warnings generated
+
+
+SYMBOL TABLE INFORMATION
+Symbol-name         Value
+-------------------------
+ACCELERATION        5
+ALL_REG             7FFF
+BITMAPDRAW          1116
+BITMAP_BIT_DEPTH    1C
+BITMAP_DATA_START   A
+BITMAP_HEIGHT       16
+BITMAP_POINTER      20
+BITMAP_SIZE         2
+BITMAP_WIDTH        12
+BULLET              3FD8C
+BULLETSPAWNTIME     40076
+BULLETSX1           3FF86
+BULLETSY1           3FFD6
+BULLETVELOCITY      40026
+BULLET_RADIUS       5
+CHUNK_HEIGHT        C
+CHUNK_WIDTH         8
+CHUNK_X             0
+CHUNK_Y             4
+CLEARBULLETS        3FD8C
+CLEARLOOP           3FDA6
+CLEAR_SCREEN_TRAP_CODE  B
+COLLISIONCHECK      3FF06
+COLLISIONLOOP       3FF20
+COLOR_BLACK         0
+COLOR_WHITE         FFFFFF
+DELETEBULLET        3FEE2
+DIGITBITMASK        3FCF6
+DISPLAY_X           10
+DISPLAY_Y           14
+DONELOOPING         3FF76
+DRAWBITMAP          1116
+DRAWING_MODE_TRAP_CODE  5C
+DRAWROW             11AC
+DRAWSEGA            142A
+DRAWSEGB            1436
+DRAWSEGC            144A
+DRAWSEGD            145E
+DRAWSEGE            1472
+DRAWSEGF            1486
+DRAWSEGG            149A
+DRAW_CIRCLE_TRAP_CODE  58
+DRAW_PIXEL_TRAP_CODE  52
+DRAW_RECT_TRAP_CODE  57
+ENABLE_DOUBLE_BUFFERING  11
+ERRORHANDLER        11DE
+FILEERROR           123F
+FILL_COLOR_TRAP_CODE  51
+FINDOPENBULLET      3FE2E
+GAMEENDSCREEN       40A1A
+GAMELOAD            106A
+GAMELOADING         1F948A
+GAMELOOP            1086
+GAMEOVER            10B6
+GAMESTART           105C
+GAMESTARTSCREEN     8EC52
+GAME_UPDATE_COUNT   2
+GETPLAYERCOORD      40188
+GETRANDOMWORD       3FF60
+HANDLEINPUT         40094
+INCREMENTCOUNT      3FCF2
+INCREMENT_COUNT     F
+INITBULLET          3FDC6
+INITDONE            3FE22
+INITPLAYER          4007E
+INITSCORE           12A0
+INT_VELOCITY        C
+KEEPLOOPING         3FF70
+MOVEDONE            4012C
+MOVEDOWN            40116
+MOVELEFT            400D6
+MOVEMENT_KEYBOARD_SPECIFIER  57415344
+MOVERIGHT           400EA
+MOVEUP              40102
+MOVE_SPEED          A
+NEG_MOVE_SPEED      FFFFFFF6
+NOCOLLISION         3FF56
+NUMBULLETS          3FF82
+ONESSCORE           3FCE6
+ONESSEGMENTPREP     131E
+ONESSEGMENTX1       3FD1C
+ONESSEGMENTX2       3FD38
+ONESSEGMENTY1       3FD2A
+ONESSEGMENTY2       3FD46
+OPENDONE            3FE52
+OPENLOOP            3FE3C
+OUTPUT_RESOLUTION   28001E0
+PADDING             129F
+PEN_COLOR_TRAP_CODE  50
+PLAYER              4007E
+PLAYERBITMAP        401A6
+PLAYERX             40A12
+PLAYERY             40A16
+PLAYER_HEIGHT       15
+PLAYER_WIDTH        19
+RANDOMVAL           4007A
+READ_KEYBOARD_TRAP_CODE  13
+RENDERBULLETS       3FE70
+RENDERDONE          3FF00
+RENDERGAMELOOP      1096
+RENDERLOOP          3FE8E
+RENDERPLAYER        4013A
+RESTARTPROMPT       10FC
+R_KEY_SPECIFIER     52
+SCORE               129F
+SCOREBANNER         14AE
+SCOREDONE           1416
+SCORERETURN         13E0
+SCORESKIP           141E
+SCOREUPDATE         12D0
+SCORE_HEIGHT        52
+SCORE_WIDTH         88
+SCORE_X             1EF
+SCORE_Y             9
+SCREEN_BOTTOM       910
+SCREEN_TOP          1A4
+SEGFUNCPTR          3FD00
+SEGMENTDRAWLOOP     13EC
+SETPENFILLBLACK     3FE54
+SETPENFILLWHITE     3FE60
+SET_OUTPUT_RES_TRAP_CODE  21
+SIZEERROR           11E8
+SKIPDRAW            140A
+SKIPRENDER          3FEFA
+SKIPSCOREINCREMENT  1372
+SPAWN_TIME_MAX      3
+START               1000
+SWAP_BUFFER_TRAP_CODE  5E
+TENSSCORE           3FCEA
+TENSSEGMENTPREP     1392
+TENSSEGMENTX1       3FD54
+TENSSEGMENTX2       3FD70
+TENSSEGMENTY1       3FD62
+TENSSEGMENTY2       3FD7E
+UPDATECOUNT         3FCEE
+UPDATE_COUNT_MAX    3

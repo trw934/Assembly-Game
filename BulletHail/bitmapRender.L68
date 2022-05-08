@@ -1,0 +1,243 @@
+00001000 Starting Address
+Assembler used: EASy68K Editor/Assembler v5.16.01
+Created On: 10/12/2021 1:51:08 PM
+
+00000000                             1  *-----------------------------------------------------------
+00000000                             2  * Program Number: Programming 2
+00000000                             3  * Written by    : Thomas Wilson
+00000000                             4  * Date Created  : 9/22/2021
+00000000                             5  * Description   : Assignment 2 - Bitmap Subroutine
+00000000                             6  * This program contains functionality for displaying
+00000000                             7  * sections of a bitmap file. It utilizes a subroutine that 
+00000000                             8  * takes arguments for a pointer to the bitmap file and the
+00000000                             9  * arguments for the subsection to display. The program
+00000000                            10  * currently works for 32-bit bitmaps, but not for 24-bit
+00000000                            11  * bitmaps. It can display at 1920x1080 resolution, and returns
+00000000                            12  * an error if the bitmap is larger than those bounds. If an error is
+00000000                            13  * encountered, an error message will be displayed and the user
+00000000                            14  * will have to restart the program. It is up to the user to ensure that 
+00000000                            15  * the chunk they want displayed has proper bounds, as entering dimensions
+00000000                            16  * that go beyond the bitmap data could have unexpected results.
+00000000                            17  *-----------------------------------------------------------
+00000000                            18  
+00000000                            19  ALL_REG         REG     D0-D7/A0-A6
+00000000                            20  
+00000000                            21  *Offsets for various parts of bitmap information
+00000000  =0000000A                 22  BITMAP_DATA_START       EQU     10
+00000000  =00000002                 23  BITMAP_SIZE             EQU     02
+00000000  =00000012                 24  BITMAP_WIDTH            EQU     18
+00000000  =00000016                 25  BITMAP_HEIGHT           EQU     22
+00000000  =0000001C                 26  BITMAP_BIT_DEPTH        EQU     28
+00000000                            27  
+00000000                            28  *Offsets for referencing values placed on the stack
+00000000  =00000000                 29  CHUNK_X         EQU     0
+00000000  =00000004                 30  CHUNK_Y         EQU     4
+00000000  =00000008                 31  CHUNK_WIDTH     EQU     8
+00000000  =0000000C                 32  CHUNK_HEIGHT    EQU     12
+00000000  =00000010                 33  DISPLAY_X       EQU     16
+00000000  =00000014                 34  DISPLAY_Y       EQU     20
+00000000  =00000020                 35  BITMAP_POINTER  EQU     32
+00000000                            36  
+00000000                            37  *Trap codes for drawing bitmap
+00000000  =00000050                 38  PEN_COLOR_TRAP_CODE     EQU     80
+00000000  =00000052                 39  DRAW_PIXEL_TRAP_CODE    EQU     82
+00000000                            40  
+00000000                            41  
+00000000                            42  * Loads the various parameters to be used into registers
+00000000                            43  * a0 - Pointer to the bitmap file
+00000000                            44  * a1 - Error string if needed
+00000000                            45  * a2 - Location of bitmap data start
+00000000                            46  * d0 - File type for error check
+00000000                            47  * d3 - Size of the bitmap file
+00000000                            48  * d5 - Bitmap height in pixels
+00000000                            49  * d6 - Pixel depth of bitmap
+00000000                            50  * d7 - Bitmap width in pixels (saved in d7 because it is used in next part)
+00000000                            51  drawBitmap
+00000000  48E7 FFFE                 52          movem.l ALL_REG, -(sp)          ; Stores argument registers on the stack to reference later
+00000004  206F 0020                 53          move.l  BITMAP_POINTER(sp),a0
+00000008  2428 000A                 54          move.l  BITMAP_DATA_START(a0),d2
+0000000C  2628 0002                 55          move.l  BITMAP_SIZE(a0),d3
+00000010  2E28 0012                 56          move.l  BITMAP_WIDTH(a0),d7
+00000014  2A28 0016                 57          move.l  BITMAP_HEIGHT(a0),d5
+00000018  2C28 001C                 58          move.l  BITMAP_BIT_DEPTH(a0),d6
+0000001C                            59     
+0000001C                            60  * All bitmap files have 0x424D as the first 2 bytes of data in the header file.     
+0000001C                            61  * If the first 2 bytes do not equal 0x424D, then the file is not a bitmap file and
+0000001C                            62  * the user will have to restart the program.
+0000001C  43F9 000001A6             63          lea     fileError,a1
+00000022  3010                      64          move.w  (a0),d0
+00000024  0C40 424D                 65          cmpi.   #$424D,d0
+00000028  6600 009E                 66          bne     errorHandler       
+0000002C                            67   
+0000002C                            68  *The bitmap data is stored in little endian format, so the next
+0000002C                            69  *instructions convert the data to a more readable big endian format.
+0000002C  E15A                      70          rol.w   #8,d2
+0000002E  4842                      71          swap.w  d2
+00000030  E15A                      72          rol.w   #8,d2
+00000032  2442                      73          move.l  d2,a2
+00000034  D5C8                      74          adda.l  a0,a2   ;a2 is now pointed at the start of the bitmap pixel data.
+00000036                            75  
+00000036  E15B                      76          rol.w   #8,d3   ;Swaps for the size of the bitmap
+00000038  4843                      77          swap.w  d3
+0000003A  E15B                      78          rol.w   #8,d3
+0000003C                            79          
+0000003C  E15F                      80          rol.w   #8,d7   ;Swaps for the width of the bitmap
+0000003E  4847                      81          swap.w  d7
+00000040  E15F                      82          rol.w   #8,d7
+00000042                            83          
+00000042  E15D                      84          rol.w   #8,d5   ;Swaps for the height of the bitmap
+00000044  4845                      85          swap.w  d5
+00000046  E15D                      86          rol.w   #8,d5
+00000048                            87          
+00000048  E15E                      88          rol.w   #8,d6   ;Swaps for the bit depth of the bitmap
+0000004A  4846                      89          swap.w  d6
+0000004C  E15E                      90          rol.w   #8,d6
+0000004E                            91          
+0000004E                            92  *Checks that bitmap is 32-bit, prints error message if not
+0000004E  43F9 000000D2             93          lea     sizeError,a1
+00000054  0C86 00000020             94          cmpi.l  #32,d6
+0000005A  6600 006C                 95          bne     errorHandler
+0000005E                            96          
+0000005E  2005                      97          move.l  d5,d0   ;Moves bitmap height into d0 to use for calculating offset into bitmap data
+00000060                            98          
+00000060                            99  * This is where registers are initalized to begin drawing the bitmap chunk
+00000060                           100  * a2 - Current location in bitmap pixel data
+00000060                           101  * d0 - Bitmap height in pixels, then trap code specifier
+00000060                           102  * d1 - Top Left X of bitmap chunk, trap code register
+00000060                           103  * d2 - Top Left Y of bitmap chunk, trap code register
+00000060                           104  * d3 - Top Left X of display location
+00000060                           105  * d4 - Height of bitmap chunk, then upper bound of Y coordinate loop
+00000060                           106  * d5 - Width of bitmap chunk, then upper bound of X coordinate loop
+00000060                           107  * d6 - Top Left Y of display location
+00000060                           108  * d7 - Bitmap width in pixels
+00000060  222F 0000                109          move.l  CHUNK_X(sp),d1
+00000064  242F 0004                110          move.l  CHUNK_Y(sp),d2
+00000068  262F 0010                111          move.l  DISPLAY_X(sp),d3
+0000006C  2C2F 0014                112          move.l  DISPLAY_Y(sp),d6
+00000070  2A2F 0008                113          move.l  CHUNK_WIDTH(sp),d5
+00000074  282F 000C                114          move.l  CHUNK_HEIGHT(sp),d4
+00000078                           115          
+00000078                           116  * It first has to be determined where in the data the chunk begins, so the offset has to be calculated.
+00000078                           117  * Offset into bitmap data = Beginning of data address + 4*(CHUNK_X +(BITMAP_WIDTH*(BITMAP_HEIGHT-CHUNK_Y-CHUNK_HEIGHT)))
+00000078  9084                     118          sub.l   d4,d0
+0000007A  9082                     119          sub.l   d2,d0
+0000007C  C0C7                     120          mulu    d7,d0
+0000007E  D081                     121          add.l   d1,d0
+00000080  E588                     122          lsl.l   #2,d0
+00000082  D5C0                     123          adda.l  d0,a2
+00000084                           124          
+00000084                           125  * Get upper bounds for X and Y by adding display coordinates to chunk height and width
+00000084  D886                     126          add.l   d6,d4
+00000086  DA83                     127          add.l   d3,d5
+00000088                           128          
+00000088                           129  * If chunk will not fit in bounds of display window, print error message.
+00000088                           130     ;     lea     boundError,a1
+00000088                           131     ;     cmpi.l  #640,d5
+00000088                           132      ;    bgt     errorHandler
+00000088                           133      ;    cmpi.l  #480,d4
+00000088                           134       ;   bgt     errorHandler
+00000088                           135          
+00000088                           136  * The bitmap pixel data does not need to be swapped like the data in the header because
+00000088                           137  * the colors are already lined up for the trap code argument.
+00000088  221A                     138          move.l  (a2)+,d1        
+0000008A  E089                     139          lsr.l   #8,d1           ; The pixel data is left-shifted by 8 bits to organize the hex color codes
+0000008C                           140                                  ; for the trap code and ignore the alpha value.
+0000008C  7050                     141          move.l  #PEN_COLOR_TRAP_CODE,d0
+0000008E  4E4F                     142          trap    #15
+00000090                           143          
+00000090  2203                     144          move.l  d3,d1
+00000092  2404                     145          move.l  d4,d2
+00000094  7052                     146          move.l  #DRAW_PIXEL_TRAP_CODE,d0
+00000096                           147         
+00000096                           148  * This is the loop that draws each row of the chunk. It will grab the pixel data,
+00000096                           149  * set the pen color, then set up the coordinates for the pixel to be drawn at.
+00000096                           150  * It will always draw the pixel at the beginning of the next loop.
+00000096                           151  drawRow:
+00000096  4E4F                     152          trap    #15
+00000098  221A                     153          move.l  (a2)+,d1
+0000009A  E089                     154          lsr.l   #8,d1                   
+0000009C  7050                     155          move.l  #PEN_COLOR_TRAP_CODE,d0
+0000009E  4E4F                     156          trap    #15
+000000A0  7052                     157          move.l  #DRAW_PIXEL_TRAP_CODE,d0
+000000A2                           158          
+000000A2  5283                     159          addi.l  #1,d3
+000000A4  2203                     160          move.l  d3,d1
+000000A6  BA83                     161          cmp.l   d3,d5
+000000A8  66EC                     162          bne drawRow
+000000AA                           163  * If the end of the row is reached, increment the column to draw the next row
+000000AA                           164  * When moving to next row, increment data offset by 4*(BITMAP_WIDTH - CHUNK_WIDTH)
+000000AA  2607                     165          move.l  d7,d3
+000000AC  96AF 0008                166          sub.l   CHUNK_WIDTH(sp),d3
+000000B0  E58B                     167          lsl.l   #2,d3
+000000B2  D5C3                     168          adda.l  d3,a2
+000000B4  262F 0010                169          move.l  DISPLAY_X(sp),d3
+000000B8  2203                     170          move.l  d3,d1
+000000BA                           171          
+000000BA  5384                     172          subi.l  #1,d4 ;The Y coordinate is decremented instead of incremented because the bitmap
+000000BC                           173                        ;stores information from the bottom of the image, so if it were incremented
+000000BC                           174                        ;the image would display upside down.
+000000BC  2404                     175          move.l  d4,d2
+000000BE  B886                     176          cmp.l   d6,d4
+000000C0  66D4                     177          bne drawRow
+000000C2  4CDF 7FFF                178          movem.l (sp)+,ALL_REG
+000000C6  4E75                     179          rts
+000000C8                           180          
+000000C8                           181  *Prints the error message that was loaded into a1 before call and exits program.
+000000C8                           182  errorHandler:
+000000C8  700D                     183          move.l  #13,d0
+000000CA  4E4F                     184          trap #15  
+000000CC  4CDF 7FFF                185          movem.l (sp)+,ALL_REG
+000000D0  4E75                     186          rts
+000000D2                           187  
+000000D2= 45 72 72 6F 72 3A ...    188  sizeError       dc.b 'Error: this is not a 32-bit bitmap. Please try a different bitmap and restart program.',0
+00000129= 45 72 72 6F 72 3A ...    189  boundError      dc.b 'Error: the parameters entered do not fit in the bounds of the window. Please enter different parameters and restart program.',0
+000001A6= 45 72 72 6F 72 3A ...    190  fileError       dc.b 'Error: the file entered is not a bitmap file. Please use a bitmap file and restart the program.',0
+00000206                           191  
+00000206                           192  
+00000206                           193  
+00000206                           194  
+00000206                           195  
+00000206                           196  
+00000206                           197  
+00000206                           198  
+00000206                           199  
+00000206                           200  
+00000206                           201  
+00000206                           202  
+00000206                           203  
+00000206                           204  
+00000206                           205  
+00000206                           206  
+00000206                           207  
+00000206                           208  
+00000206                           209  
+Line 210 WARNING: END directive missing, starting address not set
+
+No errors detected
+1 warning generated
+
+
+SYMBOL TABLE INFORMATION
+Symbol-name         Value
+-------------------------
+ALL_REG             7FFF
+BITMAP_BIT_DEPTH    1C
+BITMAP_DATA_START   A
+BITMAP_HEIGHT       16
+BITMAP_POINTER      20
+BITMAP_SIZE         2
+BITMAP_WIDTH        12
+BOUNDERROR          129
+CHUNK_HEIGHT        C
+CHUNK_WIDTH         8
+CHUNK_X             0
+CHUNK_Y             4
+DISPLAY_X           10
+DISPLAY_Y           14
+DRAWBITMAP          0
+DRAWROW             96
+DRAW_PIXEL_TRAP_CODE  52
+ERRORHANDLER        C8
+FILEERROR           1A6
+PEN_COLOR_TRAP_CODE  50
+SIZEERROR           D2
